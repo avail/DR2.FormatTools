@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "DR2.FormatTools": {
+      "commandName": "Project",
+      "commandLineArgs": "\"G:\\Games\\Dead Rising 2\\data\\streamedassets.big\""
+    }
+  }
+}
