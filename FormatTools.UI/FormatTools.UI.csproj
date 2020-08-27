@@ -1,0 +1,35 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+
+	<PropertyGroup>
+		<OutputType>WinExe</OutputType>
+		<TargetFramework>net5.0</TargetFramework>
+		<UseWindowsForms>true</UseWindowsForms>
+		<DefineConstants>IS_UI</DefineConstants>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="sharpcompress" Version="0.26.0" />
+		<PackageReference Include="ICSharpCode.TextEditor.Extended" Version="4.2.4" />
+		<ProjectReference Include="..\UI\DarkUI.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<Compile Include="../Shared/**/*.cs" />
+	</ItemGroup>
+
+	<ItemGroup>
+	  <Compile Update="Properties\Resources.Designer.cs">
+	    <DesignTime>True</DesignTime>
+	    <AutoGen>True</AutoGen>
+	    <DependentUpon>Resources.resx</DependentUpon>
+	  </Compile>
+	</ItemGroup>
+
+	<ItemGroup>
+	  <EmbeddedResource Update="Properties\Resources.resx">
+	    <Generator>ResXFileCodeGenerator</Generator>
+	    <LastGenOutput>Resources.Designer.cs</LastGenOutput>
+	  </EmbeddedResource>
+	</ItemGroup>
+
+</Project>

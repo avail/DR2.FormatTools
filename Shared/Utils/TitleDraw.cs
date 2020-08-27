@@ -1,3 +1,4 @@
+#if !IS_UI
 using AwesomeLogger.Loggers;
 using System;
 using System.Drawing;
@@ -76,3 +77,6 @@ namespace DR2.Utils
 		public static void Welcome(LogConsole logger) => DrawTitle(logger, ms_welcome, Color.DarkOrange);
 	}
 }
+#else
+// dummy
+#endif

@@ -1,5 +1,9 @@
+// TODO: decouple properly...
+#if !IS_UI
 using AwesomeLogger.Loggers;
 using DR2.FormatTools;
+#endif
+
 using DR2.Utils;
 using SharpCompress.Compressors;
 using SharpCompress.Compressors.Deflate;
@@ -8,6 +12,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -38,40 +43,51 @@ namespace DR2.Formats.BigFile
             m_stopwatch = new Stopwatch();
         }
 
+        private BinaryReader m_binaryReader;
+
         public bool Read(string fileName, bool dump = false, string dumpDirectory = "")
         {
             m_stopwatch.Restart();
 
-            using BinaryReader str = new BinaryReader(new FileStream(fileName, FileMode.Open));
+            m_binaryReader = new BinaryReader(new FileStream(fileName, FileMode.Open));
 
-            Magic = str.ReadUInt32();
+            Magic = m_binaryReader.ReadUInt32();
 
             if (Magic != Version.Two)
             {
+// TODO: decouple properly...
+#if !IS_UI
                 Program.FinishWithError($"Unsupported magic: {Magic:X6}");
+#endif
                 return false;
             }
 
-            HeaderLength = str.ReadUInt32();
+            HeaderLength = m_binaryReader.ReadUInt32();
 
-            if (str.BaseStream.Position + HeaderLength > str.BaseStream.Length)
+            if (m_binaryReader.BaseStream.Position + HeaderLength > m_binaryReader.BaseStream.Length)
             {
+// TODO: decouple properly...
+#if !IS_UI
                 Program.FinishWithError("Incorrect header");
+#endif
                 return false;
             }
 
-            Unk1 = str.ReadUInt32();
+            Unk1 = m_binaryReader.ReadUInt32();
 
-            FileCount = str.ReadUInt32();
-            FileTableOffset = str.ReadUInt32();
+            FileCount = m_binaryReader.ReadUInt32();
+            FileTableOffset = m_binaryReader.ReadUInt32();
 
-            Unk2 = str.ReadUInt32();
+            Unk2 = m_binaryReader.ReadUInt32();
 
-            str.BaseStream.Seek(FileTableOffset, SeekOrigin.Begin);
+            m_binaryReader.BaseStream.Seek(FileTableOffset, SeekOrigin.Begin);
 
-            if (str.BaseStream.Position + (FileCount * 28) > str.BaseStream.Length)
+            if (m_binaryReader.BaseStream.Position + (FileCount * 28) > m_binaryReader.BaseStream.Length)
             {
+// TODO: decouple properly...
+#if !IS_UI
                 Program.FinishWithError("Incorrect file count");
+#endif
                 return false;
             }
 
@@ -83,17 +99,17 @@ namespace DR2.Formats.BigFile
             uint currentFile = 0;
             while (currentFile < FileCount)
             {
-                nameOffsets[currentFile] = str.ReadUInt32();
+                nameOffsets[currentFile] = m_binaryReader.ReadUInt32();
 
                 Entry entry = new Entry();
-                entry.NameHash = str.ReadUInt32();
+                entry.NameHash = m_binaryReader.ReadUInt32();
 
-                uint size1 = str.ReadUInt32();
-                uint size2 = str.ReadUInt32();
+                uint size1 = m_binaryReader.ReadUInt32();
+                uint size2 = m_binaryReader.ReadUInt32();
 
-                entry.Offset = str.ReadUInt32();
-                entry.Alignment = str.ReadUInt32();
-                entry.Compression = (Compression)str.ReadUInt32();
+                entry.Offset = m_binaryReader.ReadUInt32();
+                entry.Alignment = m_binaryReader.ReadUInt32();
+                entry.Compression = (Compression)m_binaryReader.ReadUInt32();
 
                 switch (entry.Compression)
                 {
@@ -111,7 +127,10 @@ namespace DR2.Formats.BigFile
 
                 if (entry.CompressedSize != entry.RawSize && entry.Compression == Compression.None)
                 {
+// TODO: decouple properly...
+#if !IS_UI
                     Program.FinishWithError("Sizes don't match on uncompressed entry");
+#endif
                     return false;
                 }
 
@@ -125,7 +144,7 @@ namespace DR2.Formats.BigFile
                 string strin = "";
 
                 char ch;
-                while ((int)(ch = str.ReadChar()) != 0)
+                while ((int)(ch = m_binaryReader.ReadChar()) != 0)
                 {
                     strin = strin + ch;
                 }
@@ -135,7 +154,7 @@ namespace DR2.Formats.BigFile
 
             for (int i = 0; i < FileCount; i++)
             {
-                str.BaseStream.Seek(nameOffsets[i], SeekOrigin.Begin);
+                m_binaryReader.BaseStream.Seek(nameOffsets[i], SeekOrigin.Begin);
 
                 var strin = ReadNullTerminatedString();
                 var split = strin.Split("\0");
@@ -158,9 +177,12 @@ namespace DR2.Formats.BigFile
 
             if (dump)
             {
-                if (!Dump(dumpDirectory, str))
+                if (!Dump(dumpDirectory, m_binaryReader))
                 {
+// TODO: decouple properly...
+#if !IS_UI
                     Program.FinishWithError("Dumping failed. Corrupt file?");
+#endif
                     return false;
                 }
             }
@@ -202,27 +224,62 @@ namespace DR2.Formats.BigFile
             return sb.ToString();
         }
 
-        bool Dump(string outputDirectory, BinaryReader str)
+        byte[] DecompressZlib(byte[] data, int rawSize)
         {
-            byte[] DecompressZlib(byte[] data, int rawSize)
+            using MemoryStream memoryStream = new MemoryStream(data);
+
+            using ZlibStream stream = new ZlibStream(memoryStream, CompressionMode.Decompress, CompressionLevel.Default);
+
+            byte[] result = new byte[rawSize];
+
+            int offset = 0;
+            int b;
+
+            while ((b = stream.ReadByte()) != -1)
             {
-                using MemoryStream memoryStream = new MemoryStream(data);
-
-                using ZlibStream stream = new ZlibStream(memoryStream, CompressionMode.Decompress, CompressionLevel.Default);
-
-                byte[] result = new byte[rawSize];
-
-                int offset = 0;
-                int b;
-
-                while ((b = stream.ReadByte()) != -1)
-                {
-                    result[offset++] = (byte)b;
-                }
-
-                return result;
+                result[offset++] = (byte)b;
             }
 
+            return result;
+        }
+
+        public string ReadTextFile(string name)
+        {
+            var file = Entries.FirstOrDefault(f => f.Name == name);
+
+            if (file.Compression == Compression.None)
+            {
+                m_binaryReader.BaseStream.Seek(file.Offset, SeekOrigin.Begin);
+                var data = m_binaryReader.ReadBytes((int)file.RawSize);
+
+                return Encoding.ASCII.GetString(data);
+            }
+            else if (file.Compression == Compression.Zlib)
+            {
+                byte[] data = new byte[file.CompressedSize];
+
+                m_binaryReader.BaseStream.Seek(file.Offset + 4, SeekOrigin.Begin);
+                data = m_binaryReader.ReadBytes((int)file.CompressedSize);
+
+                var decompressed = DecompressZlib(data, (int)file.RawSize);
+
+                char[] chars = new char[decompressed.Length];
+
+                for (int i = 0; i < decompressed.Length; i++)
+                {
+                    chars[i] = (char)decompressed[i];
+                }
+
+                return new string(chars);
+            }
+            else
+            {
+                throw new Exception($"File compression ({file.Compression}) not supported.");
+            }
+        }
+
+        bool Dump(string outputDirectory, BinaryReader str)
+        {
             m_stopwatch.Restart();
 
             if (Directory.Exists(outputDirectory))
@@ -236,14 +293,15 @@ namespace DR2.Formats.BigFile
 
             m_metadataElapsed = m_stopwatch.ElapsedMilliseconds;
 
-#if SLOW_BOI
             object locky = new object();
-#endif
             object logLocky = new object();
 
             m_stopwatch.Restart();
 
+// TODO: decouple properly...
+#if !IS_UI
             TitleDraw.Exporting(Program.Logger);
+#endif
 
 // imagine if debugging with async shit worked
 #if true
@@ -258,10 +316,13 @@ namespace DR2.Formats.BigFile
             {
                 int threadId = Thread.CurrentThread.ManagedThreadId;
 
+// TODO: decouple properly...
+#if !IS_UI
                 lock (logLocky)
                 {
                     Program.UpdateConsole(threadId, entry);
                 }
+#endif
 
                 string outPath = Path.Combine(outputDirectory, entry.Name);
 
@@ -269,19 +330,11 @@ namespace DR2.Formats.BigFile
                 {
                     byte[] data = new byte[entry.RawSize];
 
-#if SLOW_BOI
                     lock (locky)
                     {
                         str.BaseStream.Seek(entry.Offset, SeekOrigin.Begin);
                         data = str.ReadBytes((int)entry.RawSize);
                     }
-#else
-                    byte[] tempFullData = new byte[str.BaseStream.Length];
-                    str.BaseStream.CopyToAsync();
-                    str.BaseStream.Seek(0, SeekOrigin.Begin);
-                    str.BaseStream.CopyTo(ms);
-                    Buffer.BlockCopy(ms.ToArray(), (int)entry.Offset, data, 0, (int)entry.RawSize);
-#endif
 
                     string suffix = "";
 
@@ -304,18 +357,11 @@ namespace DR2.Formats.BigFile
                 {
                     byte[] data = new byte[entry.CompressedSize];
 
-#if SLOW_BOI
                     lock (locky)
                     {
                         str.BaseStream.Seek(entry.Offset + 4, SeekOrigin.Begin);
                         data = str.ReadBytes((int)entry.CompressedSize);
                     }
-#else
-                    using MemoryStream ms = new MemoryStream();
-                    str.BaseStream.Seek(0, SeekOrigin.Begin);
-                    str.BaseStream.CopyTo(ms);
-                    Buffer.BlockCopy(ms.ToArray(), (int)entry.Offset, data, 0, (int)entry.CompressedSize);
-#endif
 
                     var decompressed = DecompressZlib(data, (int)entry.RawSize);
 
@@ -332,6 +378,8 @@ namespace DR2.Formats.BigFile
                 }
                 else
                 {
+// TODO: decouple properly...
+#if !IS_UI
                     Program.Logger.Info("[", Color.White);
                     Program.Logger.Info("Thread ", Color.Azure);
                     Program.Logger.Info("#" + threadId.ToString().PadLeft(2, '0'), Color.Aquamarine);
@@ -342,6 +390,7 @@ namespace DR2.Formats.BigFile
                     Program.Logger.Info(" on file: ", Color.OrangeRed);
 
                     Program.Logger.InfoL(entry.Name, Color.BlueViolet);
+#endif
 
                     //Console.WriteLine($"T{threadId}: Unsupported compression ({entry.Compression}) on file: {entry.Name}");
                 }
@@ -350,10 +399,13 @@ namespace DR2.Formats.BigFile
             m_stopwatch.Stop();
             m_exportElapsed = m_stopwatch.ElapsedMilliseconds;
 
+// TODO: decouple properly...
+#if !IS_UI
             Program.ProcessElapsed = m_processElapsed;
             Program.MetadataElapsed = m_metadataElapsed;
             Program.ExportElapsed = m_exportElapsed;
             Program.EntryCount = Entries.Count;
+#endif
 
             //Console.WriteLine("Exported successfully.");
             //Console.WriteLine($"Processing took {m_processElapsed}ms - Metadata export took {m_jsonElapsed}ms - File export took {m_exportElapsed / 1000}s");
